@@ -1,0 +1,43 @@
+[supervisord]
+nodaemon=true
+user=root
+logfile=/dev/stdout
+logfile_maxbytes=0
+loglevel=info
+pidfile=/tmp/supervisord.pid
+
+[unix_http_server]
+file=/tmp/supervisor.sock
+
+[supervisorctl]
+serverurl=unix:///tmp/supervisor.sock
+
+[program:tailscaled]
+command=/usr/local/bin/tailscaled --state=mem: --socket=/var/run/tailscale/tailscaled.sock --tun=userspace-networking
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+autorestart=true
+startretries=3
+priority=10
+
+[program:tailscale-up]
+command=/bin/sh -c 'sleep 3 && tailscale up --auth-key="${TAILSCALE_AUTHKEY}" --advertise-exit-node --reset'
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+autorestart=false
+startretries=2
+priority=20
+
+[program:http-server]
+command=python3 -m http.server 8080 --directory /workspace
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+autorestart=true
+startretries=3
+priority=30
