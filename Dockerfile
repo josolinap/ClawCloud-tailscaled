@@ -1,5 +1,5 @@
 FROM alpine:3.20 AS tailscale-builder
-ARG TS_VERSION=1.86.4
+ARG TS_VERSION=1.86.2
 RUN apk add --no-cache curl ca-certificates
 WORKDIR /tmp
 RUN curl -fsSL "https://pkgs.tailscale.com/stable/tailscale_${TS_VERSION}_amd64.tgz" | \
