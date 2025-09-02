@@ -6,7 +6,7 @@ RUN curl -fsSL "https://pkgs.tailscale.com/stable/tailscale_${TS_VERSION}_amd64.
     tar -xz --strip-components=1
 
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tini supervisor python3
+RUN apk add --no-cache ca-certificates tini supervisor python3 ip6tables
 COPY --from=tailscale-builder /tmp/tailscaled /usr/local/bin/tailscaled
 COPY --from=tailscale-builder /tmp/tailscale   /usr/local/bin/tailscale
 COPY supervisord.conf /etc/supervisor/conf.d/services.conf
