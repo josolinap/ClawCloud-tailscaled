@@ -3,6 +3,8 @@ set -e
 
 # Flush old rules (optional, non-fatal)
 iptables -F INPUT 2>/dev/null || true
+iptables -F OUTPUT 2>/dev/null || true
+iptables -F FORWARD 2>/dev/null || true
 ip6tables -F 2>/dev/null || true
 
 # Block all IPv6 traffic (optional, non-fatal)
@@ -12,6 +14,8 @@ ip6tables -P OUTPUT DROP 2>/dev/null || true
 
 # Harden IPv4 firewall
 iptables -P INPUT DROP 2>/dev/null || true
+iptables -P FORWARD DROP 2>/dev/null || true
+iptables -P OUTPUT ACCEPT 2>/dev/null || true   # ✅ always allow outbound traffic
 
 # Allow established and related traffic
 iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
