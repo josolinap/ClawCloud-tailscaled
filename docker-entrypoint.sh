@@ -25,6 +25,11 @@ iptables -A INPUT -p tcp --dport 22 -j ACCEPT 2>/dev/null || true
 # Allow Tailscale UDP (WireGuard peer traffic)
 iptables -A INPUT -p udp --dport 41641 -j ACCEPT 2>/dev/null || true
 
+# Enable forwarding + NAT (only works if TUN mode is available)
+iptables -A FORWARD -i tailscale0 -j ACCEPT 2>/dev/null || true
+iptables -A FORWARD -o tailscale0 -j ACCEPT 2>/dev/null || true
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
+
 # --- Optional: rate limit HTTP to mitigate floods ---
 # iptables -A INPUT -p tcp --dport 8080 -m limit --limit 25/minute --limit-burst 100 -j ACCEPT
 
