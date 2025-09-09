@@ -29,6 +29,7 @@ RUN apk add --no-cache \
     iptables \
     openssl \
     tzdata \
+    unbound \
     && rm -rf /var/cache/apk/*
 
 # Copy Tailscale binaries from official image
@@ -51,10 +52,13 @@ WORKDIR /app
 COPY --chown=root:root supervisord.prod.conf /etc/supervisor/conf.d/supervisord.conf
 COPY --chown=root:root nginx.prod.conf /etc/nginx/nginx.conf
 COPY --chown=root:root fail2ban.conf /etc/fail2ban/jail.local
+COPY --chown=root:root unbound.conf /etc/unbound/unbound.conf
 COPY --chown=root:root docker-entrypoint.prod.sh /app/entrypoint.sh
+COPY --chown=root:root iptables-manager.sh /app/iptables-manager.sh
+COPY --chown=root:root connection-monitor.sh /app/connection-monitor.sh
 
 # Set proper permissions for scripts
-RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh /app/iptables-manager.sh /app/connection-monitor.sh
 
 # Remove default nginx config
 RUN rm -f /etc/nginx/conf.d/default.conf

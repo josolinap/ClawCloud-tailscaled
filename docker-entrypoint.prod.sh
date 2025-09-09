@@ -36,7 +36,8 @@ validate_env() {
     fi
     
     # Validate authkey format (basic check)
-    if ! echo "$TAILSCALE_AUTHKEY" | grep -qE '^tskey-auth-[a-zA-Z0-9_-]+$'; then
+    if ! echo "$TAILSCALE_AUTHKEY" | grep -qE '^tskey-auth-[a-zA-Z0-9_-]+
+; then
         error "TAILSCALE_AUTHKEY format appears invalid"
         exit 1
     fi
@@ -77,32 +78,28 @@ setup_security() {
     sysctl -w net.ipv4.conf.all.log_martians=1 2>/dev/null || true
     sysctl -w net.ipv4.tcp_syncookies=1 2>/dev/null || true
     
-    # Disable IPv6 if not needed
-    if [ "$DISABLE_IPV6" = "true" ]; then
-        sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null || true
-        sysctl -w net.ipv6.conf.default.disable_ipv6=1 2>/dev/null || true
-        sysctl -w net.ipv6.conf.lo.disable_ipv6=1 2>/dev/null || true
-    fi
+    
     
     success "Security hardening applied"
 }
 
-# Test network connectivity
-test_connectivity() {
-    log "Testing network connectivity..."
-    
-    # Test DNS resolution
-    if ! nslookup google.com >/dev/null 2>&1; then
-        error "DNS resolution failed"
-        exit 1
-    fi
-    
-    # Test internet connectivity
-    if ! curl -s --max-time 10 https://www.google.com >/dev/null 2>&1; then
-        warning "Internet connectivity test failed, but continuing..."
-    fi
-    
-    success "Network connectivity verified"
+
+
+# Setup networking, including DNS and IPv6
+setup_networking() {
+    log "Configuring container networking..."
+
+    # Force DNS resolution through our local Unbound resolver
+    log "Forcing DNS to local Unbound resolver (127.0.0.1)"
+    echo "nameserver 127.0.0.1" > /etc/resolv.conf
+
+    # Disable IPv6 system-wide
+    log "Disabling IPv6 at kernel level..."
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null || warning "Could not disable IPv6 for all interfaces"
+    sysctl -w net.ipv6.conf.default.disable_ipv6=1 2>/dev/null || warning "Could not disable IPv6 by default"
+    sysctl -w net.ipv6.conf.lo.disable_ipv6=1 2>/dev/null || warning "Could not disable IPv6 for loopback"
+
+    success "Networking configuration applied"
 }
 
 # Initialize tailscale state directory
@@ -181,7 +178,7 @@ main() {
     validate_env
     health_check
     setup_security
-    test_connectivity
+    setup_networking
     init_tailscale
     
     # Clear environment variables containing secrets
