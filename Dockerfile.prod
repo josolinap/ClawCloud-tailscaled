@@ -1,91 +1,14 @@
-# Production-ready Dockerfile for Tailscale Exit Node
-# Multi-stage build for smaller, more secure final image
+# Dockerfile for a simple, unprivileged Nginx server.
+# This is designed for a managed container platform like Claw Cloud.
 
-# Build stage
-FROM tailscale/tailscale:v1.68.1 AS tailscale
-FROM nginx:1.25.3-alpine AS builder
+FROM nginx:1.25.3-alpine
 
-# Install build dependencies
-RUN apk add --no-cache \
-    supervisor \
-    curl \
-    fail2ban \
-    iptables \
-    openssl
+# The base Nginx image already handles the user and basic configuration.
+# We only need to copy our specific Nginx configuration.
+COPY nginx.prod.conf /etc/nginx/nginx.conf
 
-# Production stage
-FROM alpine:3.18
-LABEL maintainer="your-email@example.com"
-LABEL description="Production Tailscale Exit Node for claw.cloud"
-LABEL version="1.0.0"
+# Optional: Copy any static site content if you have it.
+# COPY ./my-static-site /usr/share/nginx/html
 
-# Install runtime dependencies only
-RUN apk add --no-cache \
-    bash \
-    ca-certificates \
-    curl \
-    nginx \
-    supervisor \
-    fail2ban \
-    iptables \
-    jq \
-    openssl \
-    tzdata \
-    unbound \
-    && rm -rf /var/cache/apk/*
-
-# Copy Tailscale binaries from official image
-COPY --from=tailscale /usr/local/bin/tailscale /usr/local/bin/
-COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/
-
-# Create non-root user for security
-RUN addgroup -g 1001 tailscale && \
-    adduser -D -u 1001 -G tailscale tailscale
-
-# Create necessary directories with proper permissions
-RUN mkdir -p /var/lib/tailscale /var/log/tailscale /var/log/nginx /var/log/supervisor && \
-    chown -R tailscale:tailscale /var/lib/tailscale /var/log/tailscale && \
-    chmod 750 /var/lib/tailscale /var/log/tailscale
-
-# Set the working directory
-WORKDIR /app
-
-# Copy configuration files
-COPY --chown=root:root supervisord.prod.conf /etc/supervisor/conf.d/supervisord.conf
-COPY --chown=root:root nginx.prod.conf /etc/nginx/nginx.conf
-COPY --chown=root:root fail2ban.conf /etc/fail2ban/jail.local
-COPY --chown=root:root unbound.conf /etc/unbound/unbound.conf
-COPY --chown=root:root docker-entrypoint.prod.sh /app/entrypoint.sh
-COPY --chown=root:root iptables-manager.sh /app/iptables-manager.sh
-COPY --chown=root:root connection-monitor.sh /app/connection-monitor.sh
-
-# Set proper permissions for scripts
-RUN chmod +x /app/entrypoint.sh /app/iptables-manager.sh /app/connection-monitor.sh
-
-# Remove default nginx config
-RUN rm -f /etc/nginx/conf.d/default.conf
-
-# Generate self-signed SSL certificate (replace with real certs in production)
-RUN mkdir -p /etc/ssl/certs /etc/ssl/private && \
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-    -keyout /etc/ssl/private/nginx-selfsigned.key \
-    -out /etc/ssl/certs/nginx-selfsigned.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=exit-node"
-
-# Create dhparam for enhanced security
-RUN openssl dhparam -out /etc/ssl/certs/dhparam.pem 2048
-
-# Expose ports (80 for HTTP redirect, 443 for HTTPS)
-EXPOSE 80 443
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
-
-# Security: Use non-root user where possible
-# Note: tailscaled requires root for network operations
-USER root
-
-# Start the application
-ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# The base image already exposes port 80.
+# The CMD is also inherited from the base image, which starts Nginx.
