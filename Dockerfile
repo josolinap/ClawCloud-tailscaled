@@ -1,26 +1,35 @@
-FROM alpine:3.20 AS tailscale-builder
-ARG TS_VERSION=1.86.2
-RUN apk add --no-cache curl ca-certificates
-WORKDIR /tmp
-RUN curl -fsSL "https://pkgs.tailscale.com/stable/tailscale_${TS_VERSION}_amd64.tgz" | \
-    tar -xz --strip-components=1
+# Use an official Tailscale base image
+FROM tailscale/tailscale
 
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tini supervisor python3 iptables ip6tables iproute2
-COPY --from=tailscale-builder /tmp/tailscaled /usr/local/bin/tailscaled
-COPY --from=tailscale-builder /tmp/tailscale   /usr/local/bin/tailscale
-COPY supervisord.conf /etc/supervisor/conf.d/services.conf
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-RUN mkdir -p /var/run/tailscale /workspace
+# Set the working directory
+WORKDIR /app
 
-RUN echo '<!DOCTYPE html><html><head><title>Tailscale Exit Node Status</title></head><body><h1>Tailscale Exit Node is Running</h1><p>This node is active and available as an exit node for your tailnet.</p></body></html>' > /workspace/index.html
+# Copy the supervisord configuration file
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-WORKDIR /workspace
+# Install Supervisor
+RUN apt-get update && apt-get install -y supervisor
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD tailscale status || exit 1
 
-EXPOSE 8080
+# Install a lightweight web server (e.g., nginx)
+RUN apt-get update && apt-get install -y nginx
 
-ENTRYPOINT ["/sbin/tini", "--", "/docker-entrypoint.sh"]
+# Configure nginx to serve a basic response
+RUN echo 'server {' > /etc/nginx/sites-available/default && \
+    echo '    listen 80;' >> /etc/nginx/sites-available/default && \
+    echo '    server_name _;' >> /etc/nginx/sites-available/default && \
+    echo '    location / {' >> /etc/nginx/sites-available/default && \
+    echo '        return 200 "Tailscale Exit Node is running";' >> /etc/nginx/sites-available/default && \
+    echo '    }' >> /etc/nginx/sites-available/default && \
+    echo '}' >> /etc/nginx/sites-available/default
+
+# Expose necessary ports
+EXPOSE 80 443
+
+# Configure IPv4-only networking
+RUN sysctl -w net.ipv6.conf.all.disable_ipv6=1 && \
+    sysctl -w net.ipv6.conf.default.disable_ipv6=1 && \
+    sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+# Start Supervisor and Tailscale
+CMD ["/usr/bin/supervisord", "-n"]
