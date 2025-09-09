@@ -24,7 +24,8 @@ test_connectivity() {
     local failed=0
     
     for url in "${test_urls[@]}"; do
-        if ! timeout 5 ping -c 1 "$url" >/dev/null 2>&1; then
+        if ! timeout 5 ping -c 1 "$url" >/dev/null 2>&1;
+ then
             ((failed++))
         fi
     done
@@ -211,7 +212,11 @@ main() {
             backup_iptables
             smart_cleanup
             setup_persistent_rules
-            test_connectivity && log "Fix completed successfully" || log "Fix completed but connectivity issues may persist"
+            if test_connectivity; then
+                log "Fix completed successfully"
+            else
+                log "Fix completed but connectivity issues may persist"
+            fi
             ;;
         *)
             echo "Usage: $0 {backup|detect|cleanup|setup|monitor|fix}"

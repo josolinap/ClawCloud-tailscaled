@@ -21,12 +21,14 @@ LABEL version="1.0.0"
 
 # Install runtime dependencies only
 RUN apk add --no-cache \
+    bash \
     ca-certificates \
     curl \
     nginx \
     supervisor \
     fail2ban \
     iptables \
+    jq \
     openssl \
     tzdata \
     unbound \
