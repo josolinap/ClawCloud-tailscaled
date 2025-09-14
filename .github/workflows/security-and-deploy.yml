@@ -1,14 +1,3 @@
-# .github/workflows/security-scan-and-deploy.yml
-# -------------------------------------------------
-# Workflow: Security Scan → Build & Test → Deploy (staging / production)
-# -------------------------------------------------
-# • Uses the latest stable releases of all actions
-# • Runs on ubuntu‑latest (the current default runner)
-# • Corrects the multiline‑run syntax, if‑expressions and permissions
-# • Adds the missing `packages: write` permission for GHCR pushes
-# • Uses a stable Trivy version (v0.45) instead of the `master` branch
-# -------------------------------------------------
-
 name: Security Scan and Deploy
 
 # -----------------------------------------------------------------
@@ -27,15 +16,11 @@ on:
 # Global environment variables
 # -----------------------------------------------------------------
 env:
-  # Registry we push to
   REGISTRY: ghcr.io
-  # Image name without the registry prefix (e.g. `owner/repo/tailscale-exit-node`)
-  # The repository name is already `owner/repo`. We only add a suffix for the
-  # image that will be built.
   IMAGE_NAME: ${{ github.repository }}/tailscale-exit-node
 
 # -----------------------------------------------------------------
-# Permissions (the smallest set that still lets the workflow work)
+# Permissions (minimum required)
 # -----------------------------------------------------------------
 permissions:
   contents: read                # checkout
@@ -82,12 +67,17 @@ jobs:
 
       # ---------- Trivy ----------
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@v0.45.0   # latest stable tag
+        # NOTE: The action tag `v0.44.0` **exists**.  We also pin the Trivy CLI
+        # version to 0.45.x (the latest at time of writing) via the
+        # `trivy-version` input.  This gives us the newest scanner while
+        # keeping the action itself stable.
+        uses: aquasecurity/trivy-action@v0.44.0
         with:
           image-ref: test-image:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
-          ignore-unfixed: true   # optional – you can remove if you want all findings
+          ignore-unfixed: true               # optional – remove if you want all findings
+          trivy-version: "0.45.0"            # use the latest Trivy CLI (independent of the action tag)
 
       - name: Upload Trivy results to the Security tab
         uses: github/codeql-action/upload-sarif@v2
@@ -162,11 +152,10 @@ jobs:
           # Give it a few seconds to initialise
           sleep 30
 
-          # Show logs – useful for debugging if the container crashes
           echo "=== Container logs ==="
           docker logs test-container || true
 
-          # Stop the container (ignore errors – we just want to clean up)
+          # Clean up
           docker stop test-container || true
 
   # -----------------------------------------------------------------
@@ -185,7 +174,7 @@ jobs:
         run: |
           echo "🚀 Deploying to the staging environment"
           # ---- Add your real staging deployment commands here ----
-          # Example for a script that handles the deployment:
+          # Example:
           # ./deploy.sh --environment staging
 
   # -----------------------------------------------------------------
@@ -207,42 +196,32 @@ jobs:
         run: |
           echo "🚀 Deploying to the production environment"
 
-          # ---- Validate the auth‑key format ----
+          # Validate the auth‑key format
           if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
             echo "❌ Invalid TAILSCALE_AUTHKEY format"
             exit 1
           fi
 
-          # ---- Actual deployment (replace with your own logic) ----
           chmod +x deploy.sh
           ./deploy.sh
 
       - name: Health check
-        # This step runs even if the previous step fails (so we can surface logs)
         if: always()
         run: |
           echo "🔎 Running health‑check against the newly deployed service"
-
-          # Wait a bit for the service to become ready
           sleep 60
-
-          # Replace with your real health‑endpoint URL
           HEALTH_URL="http://localhost/health"
-
           if ! curl -fsSL "$HEALTH_URL"; then
             echo "❌ Health check failed"
-            # Optional: fetch logs from your deployment script
             ./deploy.sh --logs || true
             exit 1
           fi
-
           echo "✅ Health check passed – deployment successful!"
 
       - name: Notify deployment (Slack / Discord / Email …)
         if: always()
         run: |
           echo "📣 Production deployment completed"
-          # ---- Insert your notification command(s) here ----
           # Example (Slack webhook):
           # curl -X POST -H 'Content-type: application/json' \
           #   --data '{"text":"✅ Production deployment succeeded"}' ${{ secrets.SLACK_WEBHOOK }}
@@ -263,16 +242,13 @@ jobs:
         run: |
           echo "🧹 Starting cleanup of old container images"
 
-          # Example: keep the 10 most recent images, delete the rest.
-          # Adjust the `jq` filter / count to match your policy.
-          # Requires `gh` CLI (installed by default on ubuntu‑latest)
+          # Keep the 10 most recent images, delete the rest.
           gh auth login --with-token <<<"$GHCR_TOKEN"
           IMAGES=$(gh api \
             -H "Accept: application/vnd.github+json" \
             "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions?per_page=100" \
             | jq -r '.[] | select(.metadata.container.tags != null) | .id' | sort -r)
 
-          # Keep the latest 10
           KEEP=$(echo "$IMAGES" | head -n 10)
           DELETE=$(comm -23 <(echo "$IMAGES") <(echo "$KEEP"))
 
