@@ -1,23 +1,24 @@
-# Unified docker-compose.yml with profiles for Claw Cloud deployment and local testing
-
 version: '3.8'
 
 services:
-  # Enhanced Tailscale Exit Node + Nginx service
   tailscale-exit-node:
-    profiles: ["enhanced"]
     build:
       context: .
       dockerfile: Dockerfile.enhanced
       args:
         - BUILDKIT_INLINE_CACHE=1
+
     container_name: tailscale-exit-node-enhanced
     hostname: ${HOSTNAME:-tailscale-exit-node}
+
     privileged: true
-    network_mode: host
+    network_mode: host  # Required for Tailscale
+
     ports:
-      - "5000:5000"
-      - "41641:41641/udp"
+      - "5000:5000"   # HTTP redirect (internal, can be accessed for health check if needed)
+      - "5443:5443"   # HTTPS port for external access
+      - "41641:41641/udp"  # Tailscale UDP port
+
     environment:
       - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY}
       - HOSTNAME=${HOSTNAME:-tailscale-exit-$(date +%s)}
@@ -29,6 +30,7 @@ services:
       - TS_EXTRA_ARGS=--advertise-exit-node --accept-routes --netfilter-mode=off --reset
       - NGINX_WORKER_PROCESSES=1
       - NGINX_WORKER_CONNECTIONS=512
+
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
       - net.ipv6.conf.default.disable_ipv6=1
@@ -36,11 +38,13 @@ services:
       - net.ipv4.ip_forward=1
       - net.core.rmem_max=2500000
       - net.core.wmem_max=2500000
+
     cap_add:
       - NET_ADMIN
       - NET_RAW
       - SYS_ADMIN
       - SYS_MODULE
+
     deploy:
       resources:
         limits:
@@ -49,53 +53,38 @@ services:
         reservations:
           memory: 128M
           cpus: '0.1'
+
     volumes:
       - tailscale-state:/var/lib/tailscale
       - tailscale-logs:/var/log/tailscale
       - nginx-logs:/var/log/nginx
       - supervisor-logs:/var/log/supervisor
-      - ./ssl:/etc/ssl/certs:ro
+      - ./ssl:/etc/ssl/certs:ro   # Mount self-signed certs from deploy.sh
       - /etc/localtime:/etc/localtime:ro
+
     restart: unless-stopped
+
     healthcheck:
       test: ["/usr/local/bin/health-check.sh"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
         compress: "true"
+
     security_opt:
       - apparmor:unconfined
+
     dns:
       - 8.8.8.8
       - 1.1.1.1
 
-  # Simple Nginx test service
-  web:
-    profiles: ["prod"]
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-    container_name: simple-nginx-prod
-    ports:
-      - "80:80"
-      - "443:443"
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: '0.5'
-        reservations:
-          memory: 64M
-          cpus: '0.25'
-
-# Volumes for persistence and logging
 volumes:
   tailscale-state:
     driver: local
