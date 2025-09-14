@@ -1,0 +1,14 @@
+# Dockerfile for a simple, unprivileged Nginx server.
+# This is designed for a managed container platform like Claw Cloud.
+
+FROM nginx:1.25.3-alpine
+
+# The base Nginx image already handles the user and basic configuration.
+# We only need to copy our specific Nginx configuration.
+COPY nginx.prod.conf /etc/nginx/nginx.conf
+
+# Optional: Copy any static site content if you have it.
+# COPY ./my-static-site /usr/share/nginx/html
+
+# The base image already exposes port 80.
+# The CMD is also inherited from the base image, which starts Nginx.

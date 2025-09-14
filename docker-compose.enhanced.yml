@@ -1,0 +1,129 @@
+# Enhanced docker-compose for Tailscale Exit Node with IPv6 bypass
+# Optimized for claw.cloud free tier with comprehensive platform workarounds
+
+version: '3.8'
+
+services:
+  tailscale-exit-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.enhanced
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    
+    container_name: tailscale-exit-node-enhanced
+    hostname: ${HOSTNAME:-tailscale-exit-node}
+    
+    # Privileged mode required for IPv6 bypass and network configuration
+    privileged: true
+    
+    # Network configuration for IPv6 bypass
+    network_mode: host
+    
+    # Alternative network configuration if host mode causes issues
+    # networks:
+    #   - tailscale-net
+    
+    ports:
+      - "80:80"
+      - "443:443"
+      - "41641:41641/udp"  # Tailscale port
+    
+    # Environment variables
+    environment:
+      - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - HOSTNAME=${HOSTNAME:-tailscale-exit-$(date +%s)}
+      - TZ=${TZ:-UTC}
+      - DISABLE_IPV6=true
+      - TS_USERSPACE=true
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SOCKET=/var/run/tailscale/tailscaled.sock
+      - TS_EXTRA_ARGS=--advertise-exit-node --accept-routes --netfilter-mode=off --reset
+      - NGINX_WORKER_PROCESSES=1
+      - NGINX_WORKER_CONNECTIONS=512
+    
+    # System control configuration for IPv6 bypass
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
+      - net.ipv6.conf.lo.disable_ipv6=1
+      - net.ipv4.ip_forward=1
+      - net.core.rmem_max=2500000
+      - net.core.wmem_max=2500000
+    
+    # Capabilities for network management
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+      - SYS_MODULE
+    
+    # Resource limits for claw.cloud free tier
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    
+    # Volumes for persistence and logging
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-logs:/var/log/tailscale
+      - nginx-logs:/var/log/nginx
+      - supervisor-logs:/var/log/supervisor
+      - ./ssl:/etc/ssl/certs:ro  # SSL certificates if provided
+      - /etc/localtime:/etc/localtime:ro
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["/usr/local/bin/health-check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    
+    # Logging configuration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    
+    # Security options
+    security_opt:
+      - apparmor:unconfined
+    
+    # DNS configuration (fallback if needed)
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    
+    # Dependency ordering
+    depends_on: []
+
+# Alternative network configuration if host mode is problematic
+networks:
+  tailscale-net:
+    driver: bridge
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Named volumes for data persistence
+volumes:
+  tailscale-state:
+    driver: local
+  tailscale-logs:
+    driver: local
+  nginx-logs:
+    driver: local
+  supervisor-logs:
+    driver: local

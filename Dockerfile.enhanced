@@ -1,0 +1,67 @@
+# Enhanced Dockerfile for Tailscale Exit Node with IPv6 bypass and claw.cloud optimizations
+# Optimized for minimal resource usage on free tier (0.1-0.5 CPU, 256-512MB RAM)
+
+FROM alpine:3.19 AS base
+
+# Install essential packages only
+RUN apk add --no-cache \
+    curl \
+    iptables \
+    ip6tables \
+    iproute2 \
+    ca-certificates \
+    tzdata \
+    procps \
+    bash \
+    nginx \
+    supervisor
+
+# Download and install Tailscale
+ENV TAILSCALE_VERSION=1.76.1
+RUN curl -fsSL "https://pkgs.tailscale.com/stable/tailscale_${TAILSCALE_VERSION}_linux_amd64.tgz" | tar -xzC /tmp \
+    && mv /tmp/tailscale_${TAILSCALE_VERSION}_linux_amd64/tailscale* /usr/local/bin/ \
+    && rm -rf /tmp/tailscale_*
+
+# Create non-root user
+RUN addgroup -S tailscale && adduser -S tailscale -G tailscale
+
+# Create required directories with proper permissions
+RUN mkdir -p /var/lib/tailscale /var/run/tailscale /var/log/tailscale /var/log/nginx \
+    && chown -R tailscale:tailscale /var/lib/tailscale /var/run/tailscale /var/log/tailscale
+
+# Configure nginx for minimal resource usage
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy enhanced supervisor configuration
+COPY supervisord.conf /etc/supervisor/supervisord.conf
+
+# Copy custom entrypoint with IPv6 bypass
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Copy bandwidth monitoring script
+COPY bandwidth-monitor.sh /usr/local/bin/bandwidth-monitor.sh
+RUN chmod +x /usr/local/bin/bandwidth-monitor.sh
+
+# Create health check script
+COPY health-check.sh /usr/local/bin/health-check.sh
+RUN chmod +x /usr/local/bin/health-check.sh
+
+# Expose ports
+EXPOSE 80 443
+
+# Set environment variables for IPv6 bypass and optimization
+ENV TS_USERSPACE=false \
+    TS_STATE_DIR=/var/lib/tailscale \
+    TS_SOCKET=/var/run/tailscale/tailscaled.sock \
+    DISABLE_IPV6=true \
+    TZ=UTC \
+    NGINX_WORKER_PROCESSES=1 \
+    NGINX_WORKER_CONNECTIONS=512
+
+# Health check with retry logic
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD /usr/local/bin/health-check.sh
+
+# Use custom entrypoint
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
