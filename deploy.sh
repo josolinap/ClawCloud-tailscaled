@@ -89,7 +89,7 @@ build_image() {
     export BUILD_DATE="$build_date"
     export VCS_REF="$vcs_ref"
     
-    docker_compose -f docker-compose.prod.yml build --no-cache --pull
+    docker_compose build --no-cache --pull
     
     success "Docker image built successfully"
 }
@@ -99,10 +99,10 @@ deploy_service() {
     log "Deploying service..."
     
     # Stop existing containers
-    docker_compose -f docker-compose.prod.yml down --remove-orphans || true
+    docker_compose down --remove-orphans || true
     
     # Start the service
-    docker_compose -f docker-compose.prod.yml up -d
+    docker_compose up -d
     
     success "Service deployed successfully"
 }
@@ -112,10 +112,10 @@ show_status() {
     log "Deployment status:"
     
     echo "=== Container Status ==="
-    docker_compose -f docker-compose.prod.yml ps
+    docker_compose ps
     
     echo "=== Service Logs (last 20 lines) ==="
-    docker_compose -f docker-compose.prod.yml logs --tail=20
+    docker_compose logs --tail=20
     
     echo "=== Health Check ==="
     curl -s http://localhost/health && echo
@@ -128,7 +128,7 @@ show_status() {
 # CLI options patched
 case "${1:-}" in
     --logs)
-        docker_compose -f docker-compose.prod.yml logs -f
+        docker_compose logs -f
         exit 0
         ;;
     --status)
@@ -137,16 +137,25 @@ case "${1:-}" in
         ;;
     --stop)
         log "Stopping service..."
-        docker_compose -f docker-compose.prod.yml down
+        docker_compose down
         success "Service stopped"
         exit 0
         ;;
     --clean)
         log "Stopping service and cleaning up..."
-        docker_compose -f docker-compose.prod.yml down -v --remove-orphans
+        docker_compose down -v --remove-orphans
         rm -rf "${SCRIPT_DIR}/data" "${SCRIPT_DIR}/logs"
         success "Cleanup complete"
         exit 0
         ;;
-    # ... rest stays unchanged ...
+    "")
+        check_prerequisites
+        build_image
+        deploy_service
+        show_status
+        ;;
+    *)
+        error "Unknown option: $1"
+        exit 1
+        ;;
 esac
