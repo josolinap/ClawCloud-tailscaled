@@ -87,7 +87,7 @@ jobs:
   # -----------------------------------------------------------------
   # 2️⃣ Build & test
   # -----------------------------------------------------------------
-  build-and-test:
+   build-and-test:
     runs-on: ubuntu-latest
     needs: security-scan
     steps:
@@ -119,8 +119,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_GHCR }}
-            ${{ env.REGISTRY_DH }}/${{ env.IMAGE_DH }}
+            ${{ env.REGISTRY_GHCR }}/${{ github.repository }}/tailscale-exit-node
+            ${{ env.REGISTRY_DH }}/${{ secrets.DOCKER_USERNAME }}/tailscale-exit-node
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -141,7 +141,7 @@ jobs:
 
       - name: Smoke test container startup
         env:
-          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_GHCR }}:${{ github.sha }}
+          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ github.repository }}/tailscale-exit-node:${{ github.sha }}
         run: |
           docker run -d --rm --name test-container \
             -e TAILSCALE_AUTHKEY=tskey-auth-test-key \
