@@ -9,13 +9,9 @@ on:
     - cron: '0 2 * * 0'   # Every Sunday at 02:00 UTC
 
 env:
-  # Default registry is GHCR
+  # Registries
   REGISTRY_GHCR: ghcr.io
-  IMAGE_GHCR: ${{ github.repository }}/tailscale-exit-node
-
-  # Docker Hub target
   REGISTRY_DH: docker.io
-  IMAGE_DH: ${{ secrets.DOCKERHUB_USERNAME }}/tailscale-exit-node
 
 permissions:
   contents: read
@@ -87,7 +83,7 @@ jobs:
   # -----------------------------------------------------------------
   # 2️⃣ Build & test
   # -----------------------------------------------------------------
-   build-and-test:
+  build-and-test:
     runs-on: ubuntu-latest
     needs: security-scan
     steps:
@@ -193,7 +189,7 @@ jobs:
       - name: Cleanup GHCR images
         env:
           REGISTRY: ${{ env.REGISTRY_GHCR }}
-          IMAGE: ${{ env.IMAGE_GHCR }}
+          IMAGE: ${{ github.repository }}/tailscale-exit-node
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🧹 Cleaning up old images"
