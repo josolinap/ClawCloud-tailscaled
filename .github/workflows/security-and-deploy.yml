@@ -1,14 +1,3 @@
-# .github/workflows/security-scan-and-deploy.yml
-# -------------------------------------------------
-# Workflow: Security Scan → Build & Test → Deploy (staging / production)
-# -------------------------------------------------
-# • Uses the latest stable releases of all actions
-# • Runs on ubuntu‑latest (the current default runner)
-# • Corrects the multiline‑run syntax, if‑expressions and permissions
-# • Adds the missing `packages: write` permission for GHCR pushes
-# • Uses a stable Trivy version (v0.45) instead of the `master` branch
-# -------------------------------------------------
-
 name: Security Scan and Deploy
 
 on:
@@ -17,11 +6,16 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 2 * * 0'   # Every Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'   # Every Sunday at 02:00 UTC
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/tailscale-exit-node
+  # Default registry is GHCR
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_GHCR: ${{ github.repository }}/tailscale-exit-node
+
+  # Docker Hub target
+  REGISTRY_DH: docker.io
+  IMAGE_DH: ${{ secrets.DOCKERHUB_USERNAME }}/tailscale-exit-node
 
 permissions:
   contents: read
@@ -31,9 +25,9 @@ permissions:
   actions: read
 
 jobs:
-  # -------------------------------------------------
+  # -----------------------------------------------------------------
   # 1️⃣ Security scanning
-  # -------------------------------------------------
+  # -----------------------------------------------------------------
   security-scan:
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +37,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ---------- Hadolint ----------
+      # Hadolint
       - name: Run Hadolint
         uses: hadolint/hadolint-action@v3.1.0
         with:
@@ -52,50 +46,47 @@ jobs:
           output-file: hadolint-results.sarif
           no-fail: true
 
-      - name: Upload Hadolint results to the Security tab
+      - name: Upload Hadolint results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: hadolint-results.sarif
 
-      # ---------- Build a temporary image for Trivy ----------
+      # Build test image for Trivy
       - name: Build test image (for Trivy)
-        run: |
-          docker build -f Dockerfile.prod -t test-image:${{ github.sha }} .
+        run: docker build -f Dockerfile.prod -t test-image:${{ github.sha }} .
 
-      # ---------- Trivy ----------
+      # Trivy
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.24.0  # latest stable action wrapper
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: test-image:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
-          ignore-unfixed: true   # optional
-          trivy_version: v0.45.0 # the CLI version
+          ignore-unfixed: true
 
-
-      - name: Upload Trivy results to the Security tab
+      - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
 
-      # ---------- Custom script ----------
-      - name: Run custom security scan script
+      # Custom scan
+      - name: Run custom security scan
         run: |
           chmod +x security-scan.sh
           ./security-scan.sh
 
-      - name: Upload custom security‑scan report
+      - name: Upload custom scan report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-report
           path: security-report-*.txt
 
-  # -------------------------------------------------
-  # 2️⃣ Build & test the production image
-  # -------------------------------------------------
+  # -----------------------------------------------------------------
+  # 2️⃣ Build & test
+  # -----------------------------------------------------------------
   build-and-test:
     runs-on: ubuntu-latest
     needs: security-scan
@@ -106,25 +97,38 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Login to GHCR
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract image metadata (tags & labels)
+      # Login to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DH }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Metadata
+      - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_GHCR }}
+            ${{ env.REGISTRY_DH }}/${{ env.IMAGE_DH }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Docker image
+      # Build & Push
+      - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -135,22 +139,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Test container startup (smoke test)
+      - name: Smoke test container startup
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_GHCR }}:${{ github.sha }}
         run: |
           docker run -d --rm --name test-container \
             -e TAILSCALE_AUTHKEY=tskey-auth-test-key \
             "$IMAGE"
-
           sleep 30
           echo "=== Container logs ==="
           docker logs test-container || true
           docker stop test-container || true
 
-  # -------------------------------------------------
-  # 3️⃣ Deploy to Staging (only on develop pushes)
-  # -------------------------------------------------
+  # -----------------------------------------------------------------
+  # 3️⃣ Deploy staging (develop branch)
+  # -----------------------------------------------------------------
   deploy-staging:
     runs-on: ubuntu-latest
     needs: [security-scan, build-and-test]
@@ -158,14 +161,11 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy to staging
-        run: |
-          echo "🚀 Deploying to the staging environment"
-          # ./deploy.sh --environment staging
+      - run: echo "🚀 Deploying to staging"
 
-  # -------------------------------------------------
-  # 4️⃣ Deploy to Production (only on main pushes)
-  # -------------------------------------------------
+  # -----------------------------------------------------------------
+  # 4️⃣ Deploy production (main branch)
+  # -----------------------------------------------------------------
   deploy-production:
     runs-on: ubuntu-latest
     needs: [security-scan, build-and-test]
@@ -173,67 +173,37 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-
       - name: Deploy to production
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
           HOSTNAME: ${{ vars.HOSTNAME }}
         run: |
-          echo "🚀 Deploying to the production environment"
-          if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
-            echo "❌ Invalid TAILSCALE_AUTHKEY format"
-            exit 1
-          fi
+          echo "🚀 Deploying to production"
           chmod +x deploy.sh
           ./deploy.sh
 
-      - name: Health check
-        if: always()
-        run: |
-          echo "🔎 Running health‑check against the newly deployed service"
-          sleep 60
-          HEALTH_URL="http://localhost/health"
-          if ! curl -fsSL "$HEALTH_URL"; then
-            echo "❌ Health check failed"
-            ./deploy.sh --logs || true
-            exit 1
-          fi
-          echo "✅ Health check passed – deployment successful!"
-
-      - name: Notify deployment (Slack / Discord / Email …)
-        if: always()
-        run: |
-          echo "📣 Production deployment completed"
-          # curl -X POST -H 'Content-type: application/json' \
-          #   --data '{"text":"✅ Production deployment succeeded"}' ${{ secrets.SLACK_WEBHOOK }}
-
-  # -------------------------------------------------
-  # 5️⃣ Cleanup (runs regardless of the outcome of previous jobs)
-  # -------------------------------------------------
+  # -----------------------------------------------------------------
+  # 5️⃣ Cleanup GHCR
+  # -----------------------------------------------------------------
   cleanup:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]
     if: always()
     steps:
-      - name: Cleanup old images from GHCR
+      - name: Cleanup GHCR images
         env:
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE: ${{ env.IMAGE_NAME }}
+          REGISTRY: ${{ env.REGISTRY_GHCR }}
+          IMAGE: ${{ env.IMAGE_GHCR }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🧹 Starting cleanup of old container images"
+          echo "🧹 Cleaning up old images"
           gh auth login --with-token <<<"$GHCR_TOKEN"
-          IMAGES=$(gh api \
-            -H "Accept: application/vnd.github+json" \
+          IMAGES=$(gh api -H "Accept: application/vnd.github+json" \
             "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions?per_page=100" \
-            | jq -r '.[] | select(.metadata.container.tags != null) | .id' | sort -r)
-
+            | jq -r '.[] | .id' | sort -r)
           KEEP=$(echo "$IMAGES" | head -n 10)
           DELETE=$(comm -23 <(echo "$IMAGES") <(echo "$KEEP"))
-
           for id in $DELETE; do
-            echo "Deleting image version $id"
-            gh api -X DELETE "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions/$id"
+            gh api -X DELETE \
+              "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions/$id"
           done
-
-          echo "🧹 Cleanup finished"
