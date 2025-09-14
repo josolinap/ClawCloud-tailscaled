@@ -84,3 +84,4 @@ monitoring/data/
 
 # Grafana data
 monitoring/grafana/data/
+.local/

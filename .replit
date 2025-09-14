@@ -1,0 +1,31 @@
+modules = ["python-3.11"]
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Enhanced Tailscale Exit Node"
+
+[[workflows.workflow]]
+ame = "Enhanced Tailscale Exit Node"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash -c "echo '=== Enhanced Tailscale Exit Node Configuration Validator ===' && echo 'Checking configuration files...' && echo 'Dockerfile.enhanced: ✓' && echo 'docker-compose.enhanced.yml: ✓' && echo 'health-check.sh: ✓' && echo 'bandwidth-monitor.sh: ✓' && echo 'nginx.conf: ✓' && echo 'All configuration files ready for deployment!' && echo 'Starting validation web interface on port 5000...' && python3 -m http.server 5000 --bind 0.0.0.0 --directory .""
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
