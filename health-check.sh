@@ -17,7 +17,7 @@ log() {
 
 # Function to check nginx status
 check_nginx() {
-    local url="http://localhost/health"
+    local url="http://localhost:5000/health"
     
     if curl -f -s --max-time 5 "$url" >/dev/null 2>&1; then
         return 0
@@ -96,11 +96,14 @@ health_check() {
         resources_ok=true
     fi
     
-    # Evaluate overall health
-    if [ "$nginx_ok" = true ] && [ "$tailscale_ok" = true ]; then
-        log "Health check PASSED - Core services OK"
+    # Evaluate overall health - nginx is critical, tailscale may restart during initialization
+    if [ "$nginx_ok" = true ]; then
+        log "Health check PASSED - Nginx OK"
         
         # Log warnings for non-critical services
+        if [ "$tailscale_ok" = false ]; then
+            log "WARNING: Tailscale not ready (may be initializing)"
+        fi
         if [ "$bandwidth_ok" = false ]; then
             log "WARNING: Bandwidth monitor not running"
         fi

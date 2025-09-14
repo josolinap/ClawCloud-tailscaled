@@ -48,7 +48,7 @@ COPY health-check.sh /usr/local/bin/health-check.sh
 RUN chmod +x /usr/local/bin/health-check.sh
 
 # Expose ports
-EXPOSE 80 443
+EXPOSE 5000
 
 # Set environment variables for IPv6 bypass and optimization
 ENV TS_USERSPACE=false \

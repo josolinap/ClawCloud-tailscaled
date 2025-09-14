@@ -97,6 +97,45 @@ remove_throttling() {
     unset BANDWIDTH_THROTTLED
 }
 
+# Function to create status.json for nginx endpoint
+create_status_json() {
+    local total_usage_gb="$1"
+    local current_usage_gb="$2"
+    local timestamp=$(date -Iseconds)
+    local status="normal"
+    
+    # Determine status based on usage
+    local usage_int=$(echo "$total_usage_gb" | cut -d. -f1)
+    if [ "$usage_int" -ge "$LIMIT_GB" ]; then
+        status="limit_exceeded"
+    elif [ "$usage_int" -ge "$THROTTLE_GB" ]; then
+        status="throttled"
+    elif [ "$usage_int" -ge "$WARNING_GB" ]; then
+        status="warning"
+    fi
+    
+    # Create status JSON file for nginx
+    mkdir -p "$(dirname "$BANDWIDTH_DIR/status.json")"
+    cat > "$BANDWIDTH_DIR/status.json" << EOF
+{
+    "status": "$status",
+    "timestamp": "$timestamp",
+    "usage": {
+        "current_session_gb": $current_usage_gb,
+        "monthly_total_gb": $total_usage_gb,
+        "limit_gb": $LIMIT_GB,
+        "warning_threshold_gb": $WARNING_GB,
+        "throttle_threshold_gb": $THROTTLE_GB
+    },
+    "thresholds": {
+        "warning_reached": $([ "$usage_int" -ge "$WARNING_GB" ] && echo "true" || echo "false"),
+        "throttle_active": $([ "$usage_int" -ge "$THROTTLE_GB" ] && echo "true" || echo "false"),
+        "limit_exceeded": $([ "$usage_int" -ge "$LIMIT_GB" ] && echo "true" || echo "false")
+    }
+}
+EOF
+}
+
 # Function to update usage and check limits
 update_and_check_usage() {
     local current_usage_bytes
@@ -117,6 +156,9 @@ update_and_check_usage() {
     local total_usage_gb=$(echo "scale=2; $stored_usage_gb + $current_usage_gb" | bc -l)
     
     log "Current session: ${current_usage_gb}GB, Total monthly: ${total_usage_gb}GB"
+    
+    # Create status.json for nginx status endpoint
+    create_status_json "$total_usage_gb" "$current_usage_gb"
     
     # Check thresholds
     local usage_int=$(echo "$total_usage_gb" | cut -d. -f1)

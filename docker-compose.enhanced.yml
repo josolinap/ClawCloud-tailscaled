@@ -25,8 +25,7 @@ services:
     #   - tailscale-net
     
     ports:
-      - "80:80"
-      - "443:443"
+      - "5000:5000"
       - "41641:41641/udp"  # Tailscale port
     
     # Environment variables
