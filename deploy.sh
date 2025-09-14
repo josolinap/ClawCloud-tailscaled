@@ -73,20 +73,24 @@ check_prerequisites() {
 # ------------------------------------------------------------
 validate_environment() {
     log "Validating environment variables..."
-    
+
     if [ -z "${TAILSCALE_AUTHKEY:-}" ]; then
-        error "TAILSCALE_AUTHKEY environment variable is required"
-        exit 1
+        warning "TAILSCALE_AUTHKEY environment variable is not set."
+        warning "Add it in Claw Cloud environment variables to enable deployment."
+        return 0  # Don't exit, just warn
     fi
-    
-    if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
+
+    # Validate authkey format if provided
+    if [[ -n "$TAILSCALE_AUTHKEY" && ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
         error "TAILSCALE_AUTHKEY format appears invalid"
         exit 1
     fi
-    
+
+    # Set defaults
     export HOSTNAME="${HOSTNAME:-tailscale-exit-$(date +%s)}"
     export TZ="${TZ:-UTC}"
-    
+    export DISABLE_IPV6="${DISABLE_IPV6:-true}"
+
     success "Environment validation passed"
 }
 
