@@ -64,7 +64,7 @@ jobs:
         ./security-scan.sh
     
     - name: Upload security scan report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: security-report
@@ -151,7 +151,7 @@ jobs:
       env:
         TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         HOSTNAME: ${{ vars.HOSTNAME }}
-      run: |
+      run:
         echo "Deploying to production environment"
         # Validate auth key format
         if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
@@ -164,7 +164,7 @@ jobs:
         ./deploy.sh
     
     - name: Health check
-      run: |
+      run:
         # Wait for deployment to be ready
         sleep 60
         
@@ -179,7 +179,7 @@ jobs:
     
     - name: Notify deployment
       if: always()
-      run: |
+      run:
         # Add notification logic (Slack, Discord, email, etc.)
         echo "Production deployment completed"
     
@@ -190,7 +190,7 @@ jobs:
     
     steps:
     - name: Cleanup old images
-      run: |
+      run:
         # Clean up old container registry images
         echo "Cleaning up old images"
         # Add cleanup logic for your container registry
