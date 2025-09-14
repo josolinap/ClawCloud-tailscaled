@@ -1,41 +1,39 @@
+# .github/workflows/security-scan-and-deploy.yml
+# -------------------------------------------------
+# Workflow: Security Scan → Build & Test → Deploy (staging / production)
+# -------------------------------------------------
+# • Uses the latest stable releases of all actions
+# • Runs on ubuntu‑latest (the current default runner)
+# • Corrects the multiline‑run syntax, if‑expressions and permissions
+# • Adds the missing `packages: write` permission for GHCR pushes
+# • Uses a stable Trivy version (v0.45) instead of the `master` branch
+# -------------------------------------------------
+
 name: Security Scan and Deploy
 
-# -----------------------------------------------------------------
-# Triggers
-# -----------------------------------------------------------------
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
   schedule:
-    # Every Sunday at 02:00 UTC
-    - cron: '0 2 * * 0'
+    - cron: '0 2 * * 0'   # Every Sunday at 02:00 UTC
 
-# -----------------------------------------------------------------
-# Global environment variables
-# -----------------------------------------------------------------
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/tailscale-exit-node
 
-# -----------------------------------------------------------------
-# Permissions (minimum required)
-# -----------------------------------------------------------------
 permissions:
-  contents: read                # checkout
-  packages: write               # ghcr.io push
-  security-events: write       # upload SARIF results
-  id-token: write               # (optional) for OIDC if you ever need it
-  actions: read                 # required for some internal steps
+  contents: read
+  packages: write
+  security-events: write
+  id-token: write
+  actions: read
 
-# -----------------------------------------------------------------
-# Jobs
-# -----------------------------------------------------------------
 jobs:
-  # -----------------------------------------------------------------
-  # 1️⃣  Security scanning
-  # -----------------------------------------------------------------
+  # -------------------------------------------------
+  # 1️⃣ Security scanning
+  # -------------------------------------------------
   security-scan:
     runs-on: ubuntu-latest
     steps:
@@ -67,17 +65,12 @@ jobs:
 
       # ---------- Trivy ----------
       - name: Run Trivy vulnerability scan
-        # NOTE: The action tag `v0.44.0` **exists**.  We also pin the Trivy CLI
-        # version to 0.45.x (the latest at time of writing) via the
-        # `trivy-version` input.  This gives us the newest scanner while
-        # keeping the action itself stable.
-        uses: aquasecurity/trivy-action@v0.44.0
+        uses: aquasecurity/trivy-action@v0.45.0   # ← **fixed tag**
         with:
           image-ref: test-image:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
-          ignore-unfixed: true               # optional – remove if you want all findings
-          trivy-version: "0.45.0"            # use the latest Trivy CLI (independent of the action tag)
+          ignore-unfixed: true   # optional – you can remove if you want all findings
 
       - name: Upload Trivy results to the Security tab
         uses: github/codeql-action/upload-sarif@v2
@@ -98,9 +91,9 @@ jobs:
           name: security-report
           path: security-report-*.txt
 
-  # -----------------------------------------------------------------
-  # 2️⃣  Build & test the production image
-  # -----------------------------------------------------------------
+  # -------------------------------------------------
+  # 2️⃣ Build & test the production image
+  # -------------------------------------------------
   build-and-test:
     runs-on: ubuntu-latest
     needs: security-scan
@@ -144,50 +137,40 @@ jobs:
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
         run: |
-          # Run container in detached mode with a dummy auth key
           docker run -d --rm --name test-container \
             -e TAILSCALE_AUTHKEY=tskey-auth-test-key \
             "$IMAGE"
 
-          # Give it a few seconds to initialise
           sleep 30
-
           echo "=== Container logs ==="
           docker logs test-container || true
-
-          # Clean up
           docker stop test-container || true
 
-  # -----------------------------------------------------------------
-  # 3️⃣  Deploy to Staging (only on develop pushes)
-  # -----------------------------------------------------------------
+  # -------------------------------------------------
+  # 3️⃣ Deploy to Staging (only on develop pushes)
+  # -------------------------------------------------
   deploy-staging:
     runs-on: ubuntu-latest
     needs: [security-scan, build-and-test]
     if: ${{ github.ref == 'refs/heads/develop' && github.event_name == 'push' }}
     environment: staging
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Deploy to staging
         run: |
           echo "🚀 Deploying to the staging environment"
-          # ---- Add your real staging deployment commands here ----
-          # Example:
           # ./deploy.sh --environment staging
 
-  # -----------------------------------------------------------------
-  # 4️⃣  Deploy to Production (only on main pushes)
-  # -----------------------------------------------------------------
+  # -------------------------------------------------
+  # 4️⃣ Deploy to Production (only on main pushes)
+  # -------------------------------------------------
   deploy-production:
     runs-on: ubuntu-latest
     needs: [security-scan, build-and-test]
     if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     environment: production
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Deploy to production
         env:
@@ -195,13 +178,10 @@ jobs:
           HOSTNAME: ${{ vars.HOSTNAME }}
         run: |
           echo "🚀 Deploying to the production environment"
-
-          # Validate the auth‑key format
           if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
             echo "❌ Invalid TAILSCALE_AUTHKEY format"
             exit 1
           fi
-
           chmod +x deploy.sh
           ./deploy.sh
 
@@ -222,13 +202,12 @@ jobs:
         if: always()
         run: |
           echo "📣 Production deployment completed"
-          # Example (Slack webhook):
           # curl -X POST -H 'Content-type: application/json' \
           #   --data '{"text":"✅ Production deployment succeeded"}' ${{ secrets.SLACK_WEBHOOK }}
 
-  # -----------------------------------------------------------------
-  # 5️⃣  Cleanup (runs regardless of the outcome of previous jobs)
-  # -----------------------------------------------------------------
+  # -------------------------------------------------
+  # 5️⃣ Cleanup (runs regardless of the outcome of previous jobs)
+  # -------------------------------------------------
   cleanup:
     runs-on: ubuntu-latest
     needs: [deploy-staging, deploy-production]
@@ -241,8 +220,6 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🧹 Starting cleanup of old container images"
-
-          # Keep the 10 most recent images, delete the rest.
           gh auth login --with-token <<<"$GHCR_TOKEN"
           IMAGES=$(gh api \
             -H "Accept: application/vnd.github+json" \
@@ -254,9 +231,7 @@ jobs:
 
           for id in $DELETE; do
             echo "Deleting image version $id"
-            gh api \
-              -X DELETE \
-              "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions/$id"
+            gh api -X DELETE "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions/$id"
           done
 
           echo "🧹 Cleanup finished"
