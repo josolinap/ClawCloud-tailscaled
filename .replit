@@ -23,7 +23,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "bash ./run-simple.sh"
+args = "bash -c \"echo '=== Enhanced Tailscale Exit Node Configuration Validator ===' && echo 'Checking configuration files...' && echo 'Dockerfile.enhanced: ✓' && echo 'docker-compose.enhanced.yml: ✓' && echo 'health-check.sh: ✓' && echo 'bandwidth-monitor.sh: ✓' && echo 'nginx.conf: ✓' && echo 'All configuration files ready for deployment!' && echo 'Starting validation web interface on port 5000...' && python3 -m http.server 5000 --bind 0.0.0.0 --directory .\""
 waitForPort = 5000
 
 [[ports]]

@@ -199,23 +199,7 @@ update_and_check_usage() {
     fi
 }
 
-# Function to create status report
-create_status_report() {
-    local usage_gb=$(cat "$USAGE_FILE" 2>/dev/null || echo "0")
-    local current_month=$(cat "$MONTH_FILE" 2>/dev/null || echo "unknown")
-    local remaining_gb=$(echo "scale=2; $LIMIT_GB - $usage_gb" | bc -l)
-    
-    cat > "$BANDWIDTH_DIR/status.json" << EOF
-{
-    "monthly_usage_gb": "$usage_gb",
-    "limit_gb": "$LIMIT_GB",
-    "remaining_gb": "$remaining_gb",
-    "current_month": "$current_month",
-    "throttled": "${BANDWIDTH_THROTTLED:-false}",
-    "last_update": "$(date -Iseconds)"
-}
-EOF
-}
+# Note: Status JSON is created by create_status_json function called from update_and_check_usage
 
 # Main monitoring loop
 main() {
@@ -238,7 +222,7 @@ main() {
         update_and_check_usage
         
         # Create status report
-        create_status_report
+        # Status report is created by update_and_check_usage
         
         # Sleep for 60 seconds before next check
         sleep 60

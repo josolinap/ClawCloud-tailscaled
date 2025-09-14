@@ -14,7 +14,10 @@ RUN apk add --no-cache \
     procps \
     bash \
     nginx \
-    supervisor
+    nginx-mod-http-headers-more \
+    supervisor \
+    coreutils \
+    bc
 
 # Download and install Tailscale
 ENV TAILSCALE_VERSION=1.76.1
