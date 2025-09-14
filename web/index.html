@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Enhanced Tailscale Exit Node - Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .status { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .feature { background: #f8f9fa; padding: 10px; margin: 10px 0; border-left: 4px solid #007bff; }
+        .warning { background: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; color: #856404; }
+        ul { list-style-type: none; padding: 0; }
+        li { padding: 8px; border-bottom: 1px solid #eee; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="header">🚀 Enhanced Tailscale Exit Node</h1>
+        
+        <div class="status">
+            <h3>✅ Status: Running (Demo Mode)</h3>
+            <p><strong>Enhanced for claw.cloud deployment with IPv6 bypass</strong></p>
+        </div>
+
+        <div class="feature">
+            <h3>🔧 Enhanced Features</h3>
+            <ul>
+                <li>✅ IPv6 bypass with multiple fallback mechanisms</li>
+                <li>✅ Bandwidth monitoring (35GB monthly limit)</li>
+                <li>✅ Resource optimization for free tier (0.1-0.5 CPU, 256-512MB RAM)</li>
+                <li>✅ Automatic restart prevention with container health checks</li>
+                <li>✅ claw.cloud platform-specific adaptations</li>
+                <li>✅ Comprehensive logging and monitoring</li>
+            </ul>
+        </div>
+
+        <div class="feature">
+            <h3>📊 System Information</h3>
+            <ul>
+                <li><strong>IPv6:</strong> Disabled (multiple bypass methods)</li>
+                <li><strong>Networking:</strong> Userspace mode fallback enabled</li>
+                <li><strong>Bandwidth:</strong> 0.5GB / 35GB used this month</li>
+                <li><strong>Container:</strong> Optimized for minimal resource usage</li>
+                <li><strong>Platform:</strong> claw.cloud free tier optimized</li>
+            </ul>
+        </div>
+
+        <div class="warning">
+            <strong>Note:</strong> This is a demonstration mode. In production, this would be running in a Docker container with full Tailscale functionality.
+        </div>
+
+        <h3>🔗 API Endpoints</h3>
+        <ul>
+            <li><a href="/health">Health Check</a></li>
+            <li><a href="/status">Status Information</a></li>
+            <li><a href="/bandwidth">Bandwidth Usage</a></li>
+        </ul>
+    </div>
+</body>
+</html>

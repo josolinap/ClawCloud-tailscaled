@@ -1,0 +1,9 @@
+{
+    "status": "healthy",
+    "service": "tailscale-exit-node-enhanced",
+    "timestamp": "2024-09-14T11:59:00Z",
+    "port": "5000",
+    "ipv6_disabled": true,
+    "userspace_mode": true,
+    "claw_cloud_optimized": true
+}

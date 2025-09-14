@@ -121,6 +121,7 @@ run_container() {
         --env TS_STATE_DIR=/var/lib/tailscale \
         --env TS_SOCKET=/var/run/tailscale/tailscaled.sock \
         --env TS_EXTRA_ARGS="--advertise-exit-node --accept-routes --netfilter-mode=off --reset" \
+        --publish 5000:5000 \
         --sysctl net.ipv6.conf.all.disable_ipv6=1 \
         --sysctl net.ipv6.conf.default.disable_ipv6=1 \
         --sysctl net.ipv6.conf.lo.disable_ipv6=1 \
@@ -177,7 +178,7 @@ show_status() {
     
     echo ""
     log "Health check:"
-    curl -s http://localhost/health 2>/dev/null && echo || warning "Health endpoint not accessible"
+    curl -s http://localhost:5000/health 2>/dev/null && echo || warning "Health endpoint not accessible"
 }
 
 # Main function
