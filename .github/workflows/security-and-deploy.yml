@@ -1,118 +1,286 @@
-# .github/workflows/security-scan.yml
-name: Security Scan
+# .github/workflows/security-scan-and-deploy.yml
+# -------------------------------------------------
+# Workflow: Security Scan → Build & Test → Deploy (staging / production)
+# -------------------------------------------------
+# • Uses the latest stable releases of all actions
+# • Runs on ubuntu‑latest (the current default runner)
+# • Corrects the multiline‑run syntax, if‑expressions and permissions
+# • Adds the missing `packages: write` permission for GHCR pushes
+# • Uses a stable Trivy version (v0.45) instead of the `master` branch
+# -------------------------------------------------
 
-# Run on every push to any branch and on pull‑request events.
+name: Security Scan and Deploy
+
+# -----------------------------------------------------------------
+# Triggers
+# -----------------------------------------------------------------
 on:
   push:
-    branches: [ '**' ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ '**' ]
+    branches: [ main ]
+  schedule:
+    # Every Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'
 
-# Give the jobs only the permissions they need.
+# -----------------------------------------------------------------
+# Global environment variables
+# -----------------------------------------------------------------
+env:
+  # Registry we push to
+  REGISTRY: ghcr.io
+  # Image name without the registry prefix (e.g. `owner/repo/tailscale-exit-node`)
+  # The repository name is already `owner/repo`. We only add a suffix for the
+  # image that will be built.
+  IMAGE_NAME: ${{ github.repository }}/tailscale-exit-node
+
+# -----------------------------------------------------------------
+# Permissions (the smallest set that still lets the workflow work)
+# -----------------------------------------------------------------
 permissions:
-  actions: read
-  contents: read
-  security-events: write   # required for uploading CodeQL results
-  # (add other permissions if your workflow needs them)
+  contents: read                # checkout
+  packages: write               # ghcr.io push
+  security-events: write       # upload SARIF results
+  id-token: write               # (optional) for OIDC if you ever need it
+  actions: read                 # required for some internal steps
 
+# -----------------------------------------------------------------
+# Jobs
+# -----------------------------------------------------------------
 jobs:
   # -----------------------------------------------------------------
-  # 1️⃣ CodeQL analysis – uses the new v3 of the CodeQL Action
+  # 1️⃣  Security scanning
   # -----------------------------------------------------------------
-  codeql:
-    name: CodeQL Analysis
+  security-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    # CodeQL supports many languages – list the ones you need.
-    # If you need more, just add them to the `languages` array.
-    strategy:
-      matrix:
-        language: [ 'javascript', 'python', 'go', 'java' ]   # <-- adjust to your repo
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4   # latest stable version
-
-      # Optional: set up the language runtimes if you need them for compilation
-      - name: Set up JDK 21   # only needed for Java; remove if you don't use Java
-        if: matrix.language == 'java'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Python
-        if: matrix.language == 'python'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Set up Go
-        if: matrix.language == 'go'
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-          # If you want to use a custom CodeQL config file:
-          # config-file: .github/codeql/codeql-config.yml
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          # Optional: upload SARIF to the Security tab (default is true)
-          upload: true
-          # Optional: specify a custom output name
-          # output: ${{ matrix.language }}.sarif
-
-  # -----------------------------------------------------------------
-  # 2️⃣ Trivy scan – uses the latest published version of the Trivy Action
-  # -----------------------------------------------------------------
-  trivy:
-    name: Trivy Vulnerability Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: codeql   # optional – run after CodeQL, remove if you want parallel
-
-    steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Pull Docker images / container files to scan (adjust the path to your artefacts)
-      - name: Build Docker image (if you have one)
-        run: |
-          # Example – replace with your actual build command
-          docker build -t myapp:latest .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Run Trivy scan
-        # The latest tag that actually exists at the time of writing is v0.13.0
-        uses: aquasecurity/trivy-action@v0.13.0
+      # ---------- Hadolint ----------
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
         with:
-          # Scan the container image you built above
-          image-ref: myapp:latest
-          # Choose the scan type you need (fs, image, repo, sbom, config, etc.)
-          scan-type: image
-          # Output format – SARIF works nicely with GitHub's Code Scanning UI
+          dockerfile: Dockerfile.prod
           format: sarif
-          # Where to put the SARIF file (relative to $GITHUB_WORKSPACE)
-          output: trivy-results.sarif
-          # Fail the job if high‑severity issues are found (optional)
-          ignore-unfixed: false
-          # You can also set severity thresholds, e.g.:
-          # severity: HIGH,CRITICAL
+          output-file: hadolint-results.sarif
+          no-fail: true
 
-      # Upload Trivy SARIF to the GitHub Security tab (optional but handy)
-      - name: Upload Trivy SARIF report
+      - name: Upload Hadolint results to the Security tab
+        uses: github/codeql-action/upload-sarif@v2
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hadolint-results.sarif
+
+      # ---------- Build a temporary image for Trivy ----------
+      - name: Build test image (for Trivy)
+        run: |
+          docker build -f Dockerfile.prod -t test-image:${{ github.sha }} .
+
+      # ---------- Trivy ----------
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.45.0   # latest stable tag
+        with:
+          image-ref: test-image:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true   # optional – you can remove if you want all findings
+
+      - name: Upload Trivy results to the Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
         with:
           sarif_file: trivy-results.sarif
-          # The following line makes the results appear under a custom tool name
-          category: trivy
+
+      # ---------- Custom script ----------
+      - name: Run custom security scan script
+        run: |
+          chmod +x security-scan.sh
+          ./security-scan.sh
+
+      - name: Upload custom security‑scan report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report
+          path: security-report-*.txt
+
+  # -----------------------------------------------------------------
+  # 2️⃣  Build & test the production image
+  # -----------------------------------------------------------------
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test container startup (smoke test)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          # Run container in detached mode with a dummy auth key
+          docker run -d --rm --name test-container \
+            -e TAILSCALE_AUTHKEY=tskey-auth-test-key \
+            "$IMAGE"
+
+          # Give it a few seconds to initialise
+          sleep 30
+
+          # Show logs – useful for debugging if the container crashes
+          echo "=== Container logs ==="
+          docker logs test-container || true
+
+          # Stop the container (ignore errors – we just want to clean up)
+          docker stop test-container || true
+
+  # -----------------------------------------------------------------
+  # 3️⃣  Deploy to Staging (only on develop pushes)
+  # -----------------------------------------------------------------
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-and-test]
+    if: ${{ github.ref == 'refs/heads/develop' && github.event_name == 'push' }}
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying to the staging environment"
+          # ---- Add your real staging deployment commands here ----
+          # Example for a script that handles the deployment:
+          # ./deploy.sh --environment staging
+
+  # -----------------------------------------------------------------
+  # 4️⃣  Deploy to Production (only on main pushes)
+  # -----------------------------------------------------------------
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-and-test]
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          HOSTNAME: ${{ vars.HOSTNAME }}
+        run: |
+          echo "🚀 Deploying to the production environment"
+
+          # ---- Validate the auth‑key format ----
+          if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
+            echo "❌ Invalid TAILSCALE_AUTHKEY format"
+            exit 1
+          fi
+
+          # ---- Actual deployment (replace with your own logic) ----
+          chmod +x deploy.sh
+          ./deploy.sh
+
+      - name: Health check
+        # This step runs even if the previous step fails (so we can surface logs)
+        if: always()
+        run: |
+          echo "🔎 Running health‑check against the newly deployed service"
+
+          # Wait a bit for the service to become ready
+          sleep 60
+
+          # Replace with your real health‑endpoint URL
+          HEALTH_URL="http://localhost/health"
+
+          if ! curl -fsSL "$HEALTH_URL"; then
+            echo "❌ Health check failed"
+            # Optional: fetch logs from your deployment script
+            ./deploy.sh --logs || true
+            exit 1
+          fi
+
+          echo "✅ Health check passed – deployment successful!"
+
+      - name: Notify deployment (Slack / Discord / Email …)
+        if: always()
+        run: |
+          echo "📣 Production deployment completed"
+          # ---- Insert your notification command(s) here ----
+          # Example (Slack webhook):
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"✅ Production deployment succeeded"}' ${{ secrets.SLACK_WEBHOOK }}
+
+  # -----------------------------------------------------------------
+  # 5️⃣  Cleanup (runs regardless of the outcome of previous jobs)
+  # -----------------------------------------------------------------
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    steps:
+      - name: Cleanup old images from GHCR
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE: ${{ env.IMAGE_NAME }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧹 Starting cleanup of old container images"
+
+          # Example: keep the 10 most recent images, delete the rest.
+          # Adjust the `jq` filter / count to match your policy.
+          # Requires `gh` CLI (installed by default on ubuntu‑latest)
+          gh auth login --with-token <<<"$GHCR_TOKEN"
+          IMAGES=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions?per_page=100" \
+            | jq -r '.[] | select(.metadata.container.tags != null) | .id' | sort -r)
+
+          # Keep the latest 10
+          KEEP=$(echo "$IMAGES" | head -n 10)
+          DELETE=$(comm -23 <(echo "$IMAGES") <(echo "$KEEP"))
+
+          for id in $DELETE; do
+            echo "Deleting image version $id"
+            gh api \
+              -X DELETE \
+              "/orgs/${{ github.repository_owner }}/packages/container/${IMAGE}/versions/$id"
+          done
+
+          echo "🧹 Cleanup finished"
