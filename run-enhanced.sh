@@ -116,7 +116,7 @@ run_container() {
         --env TAILSCALE_AUTHKEY="${TAILSCALE_AUTHKEY}" \
         --env HOSTNAME="${HOSTNAME}" \
         --env TZ="${TZ}" \
-        --env DISABLE_IPV6=true \
+        --envDISABLE_IPV6=true \
         --env TS_USERSPACE=true \
         --env TS_STATE_DIR=/var/lib/tailscale \
         --env TS_SOCKET=/var/run/tailscale/tailscaled.sock \
