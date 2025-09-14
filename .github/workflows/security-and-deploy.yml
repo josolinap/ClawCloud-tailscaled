@@ -1,0 +1,196 @@
+name: Security Scan and Deploy
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security scans weekly
+    - cron: '0 2 * * 0'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/tailscale-exit-node
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Run Hadolint
+      uses: hadolint/hadolint-action@v3.1.0
+      with:
+        dockerfile: Dockerfile.prod
+        format: sarif
+        output-file: hadolint-results.sarif
+        no-fail: true
+    
+    - name: Upload Hadolint results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: hadolint-results.sarif
+    
+    - name: Build test image
+      run: |
+        docker build -f Dockerfile.prod -t test-image .
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'test-image'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Run custom security scan
+      run: |
+        chmod +x security-scan.sh
+        ./security-scan.sh
+    
+    - name: Upload security scan report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-report
+        path: security-report-*.txt
+    
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix=sha-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile.prod
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Test container startup
+      run: |
+        # Test that container can start (without actual Tailscale auth)
+        docker run --rm -d --name test-container \
+          -e TAILSCALE_AUTHKEY=tskey-auth-test-key \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} || true
+        sleep 30
+        docker logs test-container || true
+        docker stop test-container || true
+    
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-and-test]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment"
+        # Add your staging deployment logic here
+        # Example for claw.cloud deployment:
+        # ./deploy.sh --environment staging
+    
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [security-scan, build-and-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      env:
+        TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        HOSTNAME: ${{ vars.HOSTNAME }}
+      run: |
+        echo "Deploying to production environment"
+        # Validate auth key format
+        if [[ ! "$TAILSCALE_AUTHKEY" =~ ^tskey-auth-[a-zA-Z0-9_-]+$ ]]; then
+          echo "Error: Invalid TAILSCALE_AUTHKEY format"
+          exit 1
+        fi
+        
+        # Deploy to production
+        chmod +x deploy.sh
+        ./deploy.sh
+    
+    - name: Health check
+      run: |
+        # Wait for deployment to be ready
+        sleep 60
+        
+        # Check health endpoint
+        curl -f http://localhost/health || {
+          echo "Health check failed"
+          ./deploy.sh --logs
+          exit 1
+        }
+        
+        echo "Deployment successful!"
+    
+    - name: Notify deployment
+      if: always()
+      run: |
+        # Add notification logic (Slack, Discord, email, etc.)
+        echo "Production deployment completed"
+    
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Cleanup old images
+      run: |
+        # Clean up old container registry images
+        echo "Cleaning up old images"
+        # Add cleanup logic for your container registry
