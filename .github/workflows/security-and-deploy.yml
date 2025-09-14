@@ -137,7 +137,7 @@ jobs:
 
       - name: Smoke test container startup
         env:
-          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ github.repository }}/tailscale-exit-node:${{ github.sha }}
+          IMAGE: ${{ env.REGISTRY_GHCR }}/${{ github.repository }}/tailscale-exit-node:latest
         run: |
           docker run -d --rm --name test-container \
             -e TAILSCALE_AUTHKEY=tskey-auth-test-key \
