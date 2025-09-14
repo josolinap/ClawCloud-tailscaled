@@ -48,7 +48,7 @@ jobs:
           no-fail: true
 
       - name: Upload Hadolint results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3   # ← upgraded
         if: always()
         with:
           sarif_file: hadolint-results.sarif
@@ -58,14 +58,15 @@ jobs:
           docker build -f Dockerfile.prod -t test-image .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        # Pin to a stable release instead of @master
+        uses: aquasecurity/trivy-action@v0.14.0
         with:
           image-ref: test-image
           format: sarif
           output: trivy-results.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3   # ← upgraded
         if: always()
         with:
           sarif_file: trivy-results.sarif
